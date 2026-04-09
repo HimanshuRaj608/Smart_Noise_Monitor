@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mega Noise Pollution Monitoring System</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+*{box-sizing:border-box}
+
+body{
+margin:0;
+font-family:'Poppins',sans-serif;
+background:linear-gradient(135deg,#16222A,#3A6073);
+color:white;
+}
+
+header{
+text-align:center;
+padding:30px 10px;
+}
+
+.dashboard{
+display:grid;
+grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
+gap:25px;
+padding:20px;
+max-width:1300px;
+margin:auto;
+}
+
+.card{
+background:rgba(255,255,255,0.08);
+border-radius:15px;
+padding:20px;
+box-shadow:0 10px 25px rgba(0,0,0,0.4);
+}
+
+.meter{
+width:180px;
+height:180px;
+border-radius:50%;
+border:12px solid #4CAF50;
+display:flex;
+align-items:center;
+justify-content:center;
+margin:20px auto;
+font-size:32px;
+font-weight:600;
+}
+
+.status{
+text-align:center;
+font-size:18px;
+font-weight:600;
+}
+
+button{
+padding:10px 20px;
+border:none;
+border-radius:8px;
+background:#4CAF50;
+color:white;
+cursor:pointer;
+margin-top:10px;
+}
+
+canvas{
+background:white;
+border-radius:10px;
+}
+
+#map{
+height:250px;
+border-radius:10px;
+}
+
+footer{
+text-align:center;
+padding:20px;
+opacity:0.8;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+<h1>🌍 Smart Noise Pollution Monitoring System</h1>
+<p>Advanced Environmental Noise Awareness Dashboard</p>
+</header>
+
+<div class="dashboard">
+
+<div class="card">
+<h2 style="text-align:center;">Live Noise Meter</h2>
+
+<div class="meter">
+<span id="db">0</span>&nbsp;dB
+</div>
+
+<div class="status" id="status">Waiting for microphone</div>
+<div class="status" id="ai">AI Classification: --</div>
+
+<div style="text-align:center;">
+<button onclick="startMonitoring()">Start Monitoring</button>
+<button onclick="generateReport()">Download Report</button>
+</div>
+</div>
+
+<div class="card">
+<h2>Noise Graph</h2>
+<canvas id="noiseChart"></canvas>
+</div>
+
+<div class="card">
+<h2>City Noise Comparison</h2>
+<canvas id="cityChart"></canvas>
+</div>
+
+<div class="card">
+<h2>Your Location Map</h2>
+<div id="map"></div>
+</div>
+
+</div>
+
+<footer>
+Smart City Noise Monitoring Project
+</footer>
+
+<script>
+
+let noiseChart;
+let cityChart;
+
+const ctx=document.getElementById('noiseChart').getContext('2d');
+
+noiseChart = new Chart(ctx, {
+type: 'line',
+data: {
+labels: [],
+datasets: [{
+label: 'Noise Level (dB)',
+data: [],
+borderColor: 'blue',
+borderWidth: 2,
+tension: 0.4,
+fill: false
+}]
+},
+options: {
+responsive: true,
+animation: false,
+scales: {
+y: {
+min: 0,
+max: 120
+}
+}
+}
+});
+
+const cityCtx=document.getElementById('cityChart').getContext('2d');
+
+cityChart=new Chart(cityCtx,{
+type:'bar',
+data:{
+labels:["Mumbai","Delhi","Aurangabad","Pune","Bangalore"],
+datasets:[{
+label:"Average Noise dB",
+data:[85,88,70,75,72]
+}]
+},
+options:{scales:{y:{beginAtZero:true,max:120}}}
+});
+
+function updateChart(value){
+
+let time = new Date().toLocaleTimeString();
+
+noiseChart.data.labels.push(time);
+noiseChart.data.datasets[0].data.push(value);
+
+if(noiseChart.data.labels.length > 20){
+noiseChart.data.labels.shift();
+noiseChart.data.datasets[0].data.shift();
+}
+
+noiseChart.update('none');
+
+}
+
+function classifyNoise(db){
+
+let type="Quiet Area";
+
+if(db>80) type="Traffic / Construction";
+else if(db>60) type="Crowd / Busy Street";
+else if(db>40) type="Normal Conversation";
+
+document.getElementById("ai").innerText="AI Classification: "+type;
+}
+
+function updateStatus(value){
+
+const status=document.getElementById("status");
+const meter=document.querySelector(".meter");
+
+if(value<=30){
+status.innerHTML="Silent Environment";
+meter.style.borderColor="#4CAF50";
+}
+else if(value<=60){
+status.innerHTML="Moderate Noise";
+meter.style.borderColor="#FFC107";
+}
+else if(value<=90){
+status.innerHTML="Loud Noise";
+meter.style.borderColor="#F44336";
+}
+else{
+status.innerHTML="Dangerous Noise";
+meter.style.borderColor="#8B0000";
+}
+
+}
+
+async function startMonitoring(){
+
+try{
+
+const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+
+const audioContext=new AudioContext();
+const mic=audioContext.createMediaStreamSource(stream);
+const analyser=audioContext.createAnalyser();
+
+mic.connect(analyser);
+
+const data=new Uint8Array(analyser.frequencyBinCount);
+
+function measure(){
+
+analyser.getByteFrequencyData(data);
+
+let values=0;
+
+for(let i=0;i<data.length;i++){
+values+=data[i];
+}
+
+let average=values/data.length;
+let db=Math.round(average);
+
+document.getElementById("db").innerText=db;
+
+updateStatus(db);
+updateChart(db);
+classifyNoise(db);
+
+requestAnimationFrame(measure);
+}
+
+measure();
+
+}catch(e){
+alert("Microphone permission required.");
+}
+
+}
+
+function generateReport(){
+
+const { jsPDF } = window.jspdf;
+
+let doc=new jsPDF();
+
+let db=document.getElementById("db").innerText;
+let status=document.getElementById("status").innerText;
+let ai=document.getElementById("ai").innerText;
+
+doc.text("Noise Pollution Monitoring Report",20,20);
+doc.text("Current Noise Level: "+db+" dB",20,40);
+doc.text("Noise Status: "+status,20,50);
+doc.text(ai,20,60);
+doc.text("Generated from Smart Noise Monitoring Dashboard",20,80);
+
+doc.save("noise_report.pdf");
+}
+
+let map=L.map('map').setView([20.5937,78.9629],5);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
+
+if(navigator.geolocation){
+
+navigator.geolocation.getCurrentPosition(function(position){
+
+let lat=position.coords.latitude;
+let lon=position.coords.longitude;
+
+map.setView([lat,lon],13);
+
+L.marker([lat,lon]).addTo(map)
+.bindPopup("Your Location")
+.openPopup();
+
+});
+
+}
+
+</script>
+
+</body>
+</html>
